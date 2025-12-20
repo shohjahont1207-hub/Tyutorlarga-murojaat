@@ -9,11 +9,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncio
+from aiohttp import web
 
 # Konfiguratsiya yuklash
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+PORT = int(os.getenv("PORT", 3000))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")  # Set this in Render: https://your-app.onrender.com
 
 # Malumotlarni saqlash
 students_data = {}
@@ -249,9 +252,9 @@ async def get_name(message: Message, state: FSMContext):
     students_data[message.from_user.id]["name"] = message.text
     
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[
+        keyboard=[[[
             KeyboardButton(text="📱 Telefon raqamni yuborish", request_contact=True)
-        ]],
+        ]]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
@@ -309,9 +312,9 @@ async def save_request(message: Message, state: FSMContext):
     
     print(f" Murojaat yaratildi: {request_id} -> Tyutor_id: {Tyutor_id}")
     
-    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    cancel_keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"cancel_request_{request_id}")
-    ]])
+    ]]])
     
     await message.answer(
         "✅ Murojatingiz qabul qilindi!\n"
@@ -320,10 +323,10 @@ async def save_request(message: Message, state: FSMContext):
     )
     
     Tyutor_chat_id = Tyutor_id
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="✅ Qabul qilish", callback_data=f"accept_{request_id}"),
         InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_{request_id}")
-    ]])
+    ]]])
     
     try:
         await bot.send_message(
@@ -395,15 +398,15 @@ async def Tyutor_view_request(query: CallbackQuery, state: FSMContext):
     
     keyboards = []
     if req['status'] == 'pending':
-        keyboards.append([[
+        keyboards.append([[[
             InlineKeyboardButton(text="✅ Qabul qilish", callback_data=f"accept_{request_id}"),
             InlineKeyboardButton(text="❌ Rad etish", callback_data=f"reject_{request_id}")
-        ]])
+        ]]])
     elif req['status'] == 'accepted':
-        keyboards.append([[
+        keyboards.append([[[
             InlineKeyboardButton(text="💬 Javob berish", callback_data=f"respond_{request_id}"),
             InlineKeyboardButton(text="✔️ Yakunlash", callback_data=f"finish_{request_id}")
-        ]])
+        ]]])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboards)
     await query.message.edit_text(text, reply_markup=keyboard)
@@ -433,9 +436,9 @@ async def accept_request(query: CallbackQuery, state: FSMContext):
     await query.answer("✅ Murojat qabul qilindi!")
     await state.update_data(current_request=request_id)
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="💬 Javob berish", callback_data=f"respond_{request_id}")
-    ]])
+    ]]])
     await query.message.edit_reply_markup(reply_markup=keyboard)
 
 @dp.callback_query(F.data.startswith("respond_"))
@@ -476,9 +479,9 @@ async def send_response(message: Message, state: FSMContext):
         "request_id": request_id
     })
     
-    talaba_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    talaba_keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="💬 Javob berish", callback_data=f"student_reply_{request_id}")
-    ]])
+    ]]])
     
     try:
         await bot.send_message(
@@ -489,10 +492,10 @@ async def send_response(message: Message, state: FSMContext):
     except:
         pass
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="🔄 Davom etish", callback_data=f"continue_{request_id}"),
         InlineKeyboardButton(text="✔️ Yakunlash", callback_data=f"finish_{request_id}")
-    ]])
+    ]]])
     
     await message.answer("✅ Javobingiz talabaga yuborildi!", reply_markup=keyboard)
     await state.clear()
@@ -534,10 +537,10 @@ async def student_send_reply(message: Message, state: FSMContext):
         "request_id": request_id
     })
     
-    Tyutor_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+    Tyutor_keyboard = InlineKeyboardMarkup(inline_keyboard=[[[
         InlineKeyboardButton(text="🔄 Davom etish", callback_data=f"continue_{request_id}"),
         InlineKeyboardButton(text="✔️ Yakunlash", callback_data=f"finish_{request_id}")
-    ]])
+    ]]])
     
     try:
         await bot.send_message(
@@ -635,12 +638,12 @@ async def finish_conversation(query: CallbackQuery):
 async def admin_menu(message: Message, state: FSMContext):
     """Admin menyusi"""
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[
+        keyboard=[[[
             KeyboardButton(text="📊 Statistika"),
             KeyboardButton(text="👥 Tyutorlarni ko'rish"),
             KeyboardButton(text="➕ Tyutor qo'shish"),
             KeyboardButton(text="✏️ Tyutor tahrirlash"),
-        ]],
+        ]]],
         resize_keyboard=True
     )
     
@@ -880,11 +883,11 @@ async def edit_Tyutor_selected(message: Message, state: FSMContext):
     )
     
     keyboard = ReplyKeyboardMarkup(
-        keyboard=[[
+        keyboard=[[[
             KeyboardButton(text="👤 Ismni o'zgaritirish"),
             KeyboardButton(text="🆔 ID sini o'zgaritirish"),
             KeyboardButton(text="❌ Bekor qilish")
-        ]],
+        ]]],
         resize_keyboard=True,
         one_time_keyboard=True
     )
@@ -997,6 +1000,20 @@ async def cancel_operation(message: Message, state: FSMContext):
     await state.clear()
     await admin_menu(message, state)
 
+async def handle_webhook(request):
+    """Handle incoming webhook requests from Telegram"""
+    url = request.match_info['token']
+    if url == BOT_TOKEN:
+        update = await request.json()
+        telegram_update = types.Update(**update)
+        await dp.feed_update(bot, telegram_update)
+        return web.Response()
+    return web.Response(status=403)
+
+async def health_check(request):
+    """Health check endpoint for Render"""
+    return web.Response(text="Bot is running!")
+
 # ===== MAIN =====
 
 async def main():
@@ -1004,15 +1021,51 @@ async def main():
     print(f" 🤖 BOT ISHGA TUSHMOQDA...")
     print(f" Admin ID: {ADMIN_ID}")
     print(f" Jami fakultetlar: {len(FACULTIES)}")
+    print(f" PORT: {PORT}")
+    print(f" WEBHOOK_URL: {WEBHOOK_URL}")
     print(f"{'='*60}\n")
     
     try:
-        await dp.start_polling(bot)
+        if WEBHOOK_URL:
+            # Webhook mode
+            webhook_path = f"/{BOT_TOKEN}"
+            webhook_url = f"{WEBHOOK_URL}{webhook_path}"
+            
+            # Set webhook
+            await bot.set_webhook(webhook_url)
+            print(f" ✅ Webhook o'rnatildi: {webhook_url}")
+            
+            # Create web app
+            app = web.Application()
+            app.router.add_post(webhook_path, handle_webhook)
+            app.router.add_get("/", health_check)
+            app.router.add_get("/health", health_check)
+            
+            # Start web server
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, '0.0.0.0', PORT)
+            await site.start()
+            
+            print(f" ✅ Server ishga tushdi: 0.0.0.0:{PORT}")
+            print(" Botni to'xtatish uchun Ctrl+C bosing...")
+            
+            # Keep running
+            await asyncio.Event().wait()
+        else:
+            # Polling mode (local development)
+            print(" ⚠️ WEBHOOK_URL o'rnatilmagan, polling rejimida ishlamoqda...")
+            await dp.start_polling(bot)
+            
     except KeyboardInterrupt:
         print(" Bot to'xtatildi (Ctrl+C)")
     except Exception as e:
         print(f" ❌ Xato: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
+        if WEBHOOK_URL:
+            await bot.delete_webhook()
         await bot.session.close()
 
 if __name__ == "__main__":
