@@ -1000,19 +1000,25 @@ async def cancel_operation(message: Message, state: FSMContext):
     await state.clear()
     await admin_menu(message, state)
 
-async def handle_webhook(request):
-    """Handle incoming webhook requests from Telegram"""
-    url = request.match_info['token']
-    if url == BOT_TOKEN:
-        update = await request.json()
-        telegram_update = types.Update(**update)
-        await dp.feed_update(bot, telegram_update)
-        return web.Response()
-    return web.Response(status=403)
+# ===== HTTP SERVER FOR RENDER =====
 
 async def health_check(request):
     """Health check endpoint for Render"""
-    return web.Response(text="Bot is running!")
+    return web.Response(text="OK")
+
+async def webhook_handler(request):
+    """Handle incoming webhook updates"""
+    update = await request.json()
+    await dp.feed_update(bot, types.Update(**update))
+    return web.Response(text="OK")
+
+async def setup_webhook():
+    """Setup webhook for production"""
+    if WEBHOOK_URL:
+        await bot.set_webhook(WEBHOOK_URL)
+        print(f" ✅ Webhook configured: {WEBHOOK_URL}")
+    else:
+        print(" ⚠️ WEBHOOK_URL not set - using polling mode")
 
 # ===== MAIN =====
 
@@ -1021,52 +1027,46 @@ async def main():
     print(f" 🤖 BOT ISHGA TUSHMOQDA...")
     print(f" Admin ID: {ADMIN_ID}")
     print(f" Jami fakultetlar: {len(FACULTIES)}")
-    print(f" PORT: {PORT}")
-    print(f" WEBHOOK_URL: {WEBHOOK_URL}")
+    print(f" Port: {PORT}")
     print(f"{'='*60}\n")
     
-    try:
-        if WEBHOOK_URL:
-            # Webhook mode
-            webhook_path = f"/{BOT_TOKEN}"
-            webhook_url = f"{WEBHOOK_URL}{webhook_path}"
-            
-            # Set webhook
-            await bot.set_webhook(webhook_url)
-            print(f" ✅ Webhook o'rnatildi: {webhook_url}")
-            
-            # Create web app
-            app = web.Application()
-            app.router.add_post(webhook_path, handle_webhook)
-            app.router.add_get("/", health_check)
-            app.router.add_get("/health", health_check)
-            
-            # Start web server
-            runner = web.AppRunner(app)
-            await runner.setup()
-            site = web.TCPSite(runner, '0.0.0.0', PORT)
-            await site.start()
-            
-            print(f" ✅ Server ishga tushdi: 0.0.0.0:{PORT}")
-            print(" Botni to'xtatish uchun Ctrl+C bosing...")
-            
-            # Keep running
+    if WEBHOOK_URL:
+        # Webhook mode for production
+        await setup_webhook()
+        
+        app = web.Application()
+        app.router.add_get('/', health_check)
+        app.router.add_get('/health', health_check)
+        app.router.add_post(f'/{BOT_TOKEN}', webhook_handler)
+        
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
+        
+        print(f" ✅ HTTP server started on 0.0.0.0:{PORT}")
+        print(f" ✅ Webhook mode: {WEBHOOK_URL}/{BOT_TOKEN}")
+        
+        await site.start()
+        
+        # Keep the server running
+        try:
             await asyncio.Event().wait()
-        else:
-            # Polling mode (local development)
-            print(" ⚠️ WEBHOOK_URL o'rnatilmagan, polling rejimida ishlamoqda...")
+        except KeyboardInterrupt:
+            print(" Bot to'xtatildi (Ctrl+C)")
+        finally:
+            await runner.cleanup()
+            await bot.session.close()
+    else:
+        # Polling mode for development
+        print(" ⚠️ Development mode - using polling")
+        try:
             await dp.start_polling(bot)
-            
-    except KeyboardInterrupt:
-        print(" Bot to'xtatildi (Ctrl+C)")
-    except Exception as e:
-        print(f" ❌ Xato: {e}")
-        import traceback
-        traceback.print_exc()
-    finally:
-        if WEBHOOK_URL:
-            await bot.delete_webhook()
-        await bot.session.close()
+        except KeyboardInterrupt:
+            print(" Bot to'xtatildi (Ctrl+C)")
+        except Exception as e:
+            print(f" ❌ Xato: {e}")
+        finally:
+            await bot.session.close()
 
 if __name__ == "__main__":
     try:
