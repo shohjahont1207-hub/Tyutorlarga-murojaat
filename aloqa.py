@@ -1015,8 +1015,9 @@ async def webhook_handler(request):
 async def setup_webhook():
     """Setup webhook for production"""
     if WEBHOOK_URL:
-        await bot.set_webhook(WEBHOOK_URL)
-        print(f" ✅ Webhook configured: {WEBHOOK_URL}")
+        webhook_path = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+        await bot.set_webhook(webhook_path)
+        print(f" ✅ Webhook configured: {webhook_path}")
     else:
         print(" ⚠️ WEBHOOK_URL not set - using polling mode")
 
@@ -1030,43 +1031,37 @@ async def main():
     print(f" Port: {PORT}")
     print(f"{'='*60}\n")
     
-    if WEBHOOK_URL:
-        # Webhook mode for production
-        await setup_webhook()
-        
-        app = web.Application()
-        app.router.add_get('/', health_check)
-        app.router.add_get('/health', health_check)
-        app.router.add_post(f'/{BOT_TOKEN}', webhook_handler)
-        
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', PORT)
-        
-        print(f" ✅ HTTP server started on 0.0.0.0:{PORT}")
-        print(f" ✅ Webhook mode: {WEBHOOK_URL}/{BOT_TOKEN}")
-        
-        await site.start()
-        
-        # Keep the server running
-        try:
-            await asyncio.Event().wait()
-        except KeyboardInterrupt:
-            print(" Bot to'xtatildi (Ctrl+C)")
-        finally:
-            await runner.cleanup()
-            await bot.session.close()
-    else:
-        # Polling mode for development
-        print(" ⚠️ Development mode - using polling")
-        try:
-            await dp.start_polling(bot)
-        except KeyboardInterrupt:
-            print(" Bot to'xtatildi (Ctrl+C)")
-        except Exception as e:
-            print(f" ❌ Xato: {e}")
-        finally:
-            await bot.session.close()
+    if not WEBHOOK_URL:
+        print(" ❌ ERROR: WEBHOOK_URL environment variable is required!")
+        print(" ❌ Please set WEBHOOK_URL in Render dashboard")
+        print(" ❌ Example: https://your-app-name.onrender.com")
+        return
+    
+    # Webhook mode for production
+    await setup_webhook()
+    
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    app.router.add_post(f'/{BOT_TOKEN}', webhook_handler)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', PORT)
+    
+    print(f" ✅ HTTP server started on 0.0.0.0:{PORT}")
+    print(f" ✅ Webhook URL: {WEBHOOK_URL}/{BOT_TOKEN}")
+    
+    await site.start()
+    
+    # Keep the server running
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        print(" Bot to'xtatildi (Ctrl+C)")
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
 
 if __name__ == "__main__":
     try:
